@@ -40,21 +40,22 @@ sudo ./svc.sh start
 Sau khi cài xong, vào **Settings → Actions → Runners** sẽ thấy runner hiện trạng thái **Idle**
 (màu xanh) — vậy là sẵn sàng nhận job.
 
-## Bước 3 — Tạo `.env` (chỉ 1 lần, trực tiếp trên server)
+## Bước 3 — Khai báo secret `ENV_FILE` trên GitHub (chỉ 1 lần)
 
-Chạy thử workflow lần đầu (push 1 commit bất kỳ, hoặc bấm **Run workflow** thủ công) — bước
-*"Kiểm tra .env đã có chưa"* sẽ báo lỗi và cho biết đường dẫn thư mục checkout (dạng
-`~/actions-runner/_work/WEBAPPHDR/WEBAPPHDR`). Vào đúng thư mục đó trên server:
+`.env` không copy tay lên server nữa — workflow tự tạo lại file này ở mỗi lần deploy từ 1 secret
+tên `ENV_FILE`, nội dung y hệt 1 file `.env` bình thường (mỗi dòng 1 biến `KEY=value`).
 
-```bash
-cd ~/actions-runner/_work/WEBAPPHDR/WEBAPPHDR
-cp .env.example .env
-nano .env    # điền AUTOFOTELLO_SECRET = 1 chuỗi ngẫu nhiên dài, ví dụ: openssl rand -hex 32
-```
+Vào repo trên GitHub → **Settings → Secrets and variables → Actions → New repository secret**:
 
-`.env` nằm ngoài git (đã gitignore) và bước checkout dùng `clean: false` nên file này sẽ **không
-bị xóa** ở các lần deploy sau. Chạy lại workflow (push commit mới, hoặc **Re-run jobs**) — lần
-này sẽ build & chạy container thành công.
+- Name: `ENV_FILE`
+- Value: dán nguyên nội dung file `.env` (đủ 5 dòng `AUTOFOTELLO_SECRET`, `SUPABASE_URL`,
+  `SUPABASE_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`).
+
+Chạy lại workflow (push commit mới, hoặc **Re-run jobs**) — bước *"Tạo file .env từ secret"* sẽ
+ghi secret này ra `.env` trên server rồi build & chạy container.
+
+> Muốn đổi giá trị nào (vd đổi `AUTOFOTELLO_SECRET`) thì sửa lại secret `ENV_FILE` trên GitHub rồi
+> chạy lại workflow — không cần đụng gì trên server.
 
 ## Từ giờ trở đi
 
@@ -64,9 +65,9 @@ Chỉ cần `git push` lên `main` là server tự động:
 Theo dõi tiến trình ở tab **Actions** trên GitHub — vì job `deploy` chạy ngay trên server, log
 build/restart hiện trực tiếp ở đó, không cần SSH vào xem.
 
-> ⚠️ Đừng sửa code trực tiếp trong thư mục `_work/WEBAPPHDR/WEBAPPHDR` trên server nữa — sửa ở
-> máy dev, push lên GitHub, để CI/CD tự đồng bộ xuống. Riêng `.env` thì sửa trực tiếp trên server
-> là đúng (vì không nằm trong git).
+> ⚠️ Đừng sửa code (hay `.env`) trực tiếp trong thư mục `_work/WEBAPPHDR/WEBAPPHDR` trên server
+> nữa — code thì sửa ở máy dev rồi push; `.env` thì sửa secret `ENV_FILE` trên GitHub — vì file
+> `.env` trên server bị **ghi đè từ secret ở mỗi lần deploy**, sửa tay sẽ mất ngay lần deploy kế.
 
 ## Rollback nếu deploy lỗi
 
