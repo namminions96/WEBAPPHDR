@@ -1,14 +1,16 @@
 """
 core/config.py — Hằng số toàn cục và cấu hình ứng dụng
 """
+import os
 from pathlib import Path
 
 CURRENT_VERSION = '1.4.5'
 VERSION_CHECK_URL = "https://api.github.com/repos/namminions96/AutoHDR_APP/releases/latest"
 
 
-TELEGRAM_BOT_TOKEN = '8643886685:AAF68GrHfgSbqJMLkogXdXlCN2C7fYX0lXE'
-TELEGRAM_CHAT_ID   = '1345590928'
+# Secret thật lấy từ biến môi trường (.env) — không hardcode trong file commit lên git.
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_CHAT_ID   = os.environ.get('TELEGRAM_CHAT_ID', '')
 
 ACCOUNT_NAME = 'NGUYEN THI YEN NHI'
 ACCOUNT_NO   = '44615107'
@@ -97,10 +99,10 @@ CACHE_TTL = 300  # seconds
 GITHUB_UPDATE_TOKEN = ""
 
 # ──────────────────────────────────────────────────────────────
-# Supabase Configuration
+# Supabase Configuration — secret thật lấy từ biến môi trường (.env)
 # ──────────────────────────────────────────────────────────────
-SUPABASE_URL = "https://eijcdhlnfkfrvgcwpqcb.supabase.co"
-SUPABASE_KEY = "sb_publishable_-QWzBkyVoqwZ_O-Ux0fEew_Nkxc7Zoj"
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 OAUTH_PORT = 54321
 
 # Tên bảng profile + RPC. Để test trên bảng giả: đổi thành "profiles_v1" / "link_device_v1".
