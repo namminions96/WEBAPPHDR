@@ -371,7 +371,7 @@ function app() {
       const MAX_BATCH_FILES = 8;
       const CHUNK_THRESHOLD = 40 * 1024 * 1024;   // file lớn hơn -> tải theo mảnh (chunk)
       const CHUNK_SIZE = 20 * 1024 * 1024;        // 20MB / mảnh
-      const CONCURRENCY = 3;                      // số lô tải song song (giảm từ 5 -> 3: server/mạng không kham nổi 5 lô ~30MB cùng lúc, gây 502/524)
+      const CONCURRENCY = 1;                      // tải TUẦN TỰ — server/mạng không kham nổi dù chỉ vài lô song song (502/524 liên tục kể cả ở mức 3)
 
       const files = this.selectedFiles;
       const small = files.filter(f => (f.size || 0) <= CHUNK_THRESHOLD);
