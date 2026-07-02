@@ -20,19 +20,28 @@ jobs:
     needs: build-check
     runs-on: [self-hosted, hdr_web_app]
     steps:
-      # clean: false — GIỮ file .env (gitignored) qua các lần checkout.
-      # Mặc định actions/checkout dọn sạch workspace (git clean -ffdx) trước khi checkout,
-      # sẽ xóa mất .env nếu không tắt clean.
+      # clean: false — mặc định actions/checkout dọn sạch workspace (git clean -ffdx)
+      # trước khi checkout; tắt đi để không đụng tới các thứ khác server tự sinh ra
+      # (vd cache build, log...). File .env giờ được tạo lại từ secret ở bước dưới
+      # nên không còn phụ thuộc vào việc "giữ file cũ qua các lần chạy" nữa.
       - uses: actions/checkout@v4
         with:
           clean: false
 
-      - name: Kiểm tra .env đã có chưa
+      # Ghi .env từ secret ENV_FILE (Settings -> Secrets and variables -> Actions).
+      # Dùng biến môi trường (env:) thay vì nhúng thẳng ${{ secrets.ENV_FILE }} vào
+      # chuỗi lệnh — nếu nội dung .env có dấu ", `, $(...) thì nhúng thẳng có thể vỡ
+      # lệnh shell hoặc bị hiểu nhầm thành lệnh khác.
+      - name: Tạo file .env từ secret
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
         run: |
-          if [ ! -f .env ]; then
-            echo "::error::Thiếu file .env trong $(pwd). Chạy 1 lần: cp .env.example .env && điền AUTOFOTELLO_SECRET, rồi chạy lại workflow."
+          if [ -z "$ENV_FILE" ]; then
+            echo "::error::Secret ENV_FILE đang trống hoặc chưa được tạo (Settings -> Secrets and variables -> Actions)."
             exit 1
           fi
+          printf '%s\n' "$ENV_FILE" > .env
+          chmod 600 .env
 
       - name: Build lại image & restart container
         run: |
