@@ -1,0 +1,21 @@
+services:
+  web:
+    build: .
+    # image: autofotello-web            # nếu muốn đặt tên image
+    restart: unless-stopped
+    ports:
+      - "8000:8000"                      # đổi thành "127.0.0.1:8000:8000" nếu có nginx phía trước
+    environment:
+      # BẮT BUỘC đặt cố định để giữ đăng nhập qua các lần restart:
+      AUTOFOTELLO_SECRET: "doi-thanh-chuoi-ngau-nhien-dai-cua-ban"
+      # Bật khi chạy sau nginx/HTTPS:
+      AUTOFOTELLO_PROXY: "1"
+      AUTOFOTELLO_HTTPS: "0"             # đặt "1" khi phục vụ qua https
+      AUTOFOTELLO_SESSION_DAYS: "7"
+      AUTOFOTELLO_FILE_TTL: "3600"       # tự xóa file upload/zip tạm sau 3600s (1h)
+      # AUTOFOTELLO_MAX_UPLOAD: "4294967296"
+    volumes:
+      - autofotello_data:/data           # token user, session, file zip tạm — dữ liệu bền
+
+volumes:
+  autofotello_data:
