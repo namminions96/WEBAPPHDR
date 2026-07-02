@@ -16,22 +16,25 @@ jobs:
         run: docker build -t webapphdr:ci .
 
   deploy:
-    name: Deploy to Linux server via SSH
+    name: Deploy (self-hosted runner chạy ngay trên server)
     needs: build-check
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - name: SSH vào server, kéo code mới, build lại container
-        uses: appleboy/ssh-action@v1.0.3
+      # clean: false — GIỮ file .env (gitignored) qua các lần checkout.
+      # Mặc định actions/checkout dọn sạch workspace (git clean -ffdx) trước khi checkout,
+      # sẽ xóa mất .env nếu không tắt clean.
+      - uses: actions/checkout@v4
         with:
-          host: ${{ secrets.SSH_HOST }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script_stop: true
-          script: |
-            set -e
-            cd "${{ secrets.DEPLOY_PATH }}"
-            git fetch origin main
-            git reset --hard origin/main
-            docker compose up -d --build --remove-orphans
-            docker image prune -f
+          clean: false
+
+      - name: Kiểm tra .env đã có chưa
+        run: |
+          if [ ! -f .env ]; then
+            echo "::error::Thiếu file .env trong $(pwd). Chạy 1 lần: cp .env.example .env && điền AUTOFOTELLO_SECRET, rồi chạy lại workflow."
+            exit 1
+          fi
+
+      - name: Build lại image & restart container
+        run: |
+          docker compose up -d --build --remove-orphans
+          docker image prune -f

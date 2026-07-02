@@ -1,85 +1,87 @@
-# CI/CD — Auto deploy lên server Linux
+# CI/CD — Auto deploy lên server Linux (self-hosted runner)
 
 Workflow ở [.github/workflows/deploy.yml](.github/workflows/deploy.yml) chạy mỗi khi push lên
 nhánh `main`:
 
-1. **build-check**: build thử Docker image trên máy chủ GitHub Actions — nếu `Dockerfile` lỗi
-   thì dừng ở đây, không đụng vào server thật.
-2. **deploy**: SSH vào server Linux, `git reset --hard origin/main` để đồng bộ đúng code vừa
-   push, rồi `docker compose up -d --build` để build lại image và restart container.
+1. **build-check**: chạy trên máy chủ GitHub Actions (cloud) — build thử Docker image để chắc
+   `Dockerfile` không lỗi. Không đụng gì tới server thật.
+2. **deploy**: chạy **ngay trên server của bạn** (self-hosted runner) — checkout code mới nhất,
+   rồi `docker compose up -d --build` để build lại image và restart container.
 
-Cách này phù hợp với 1 VPS chạy `docker compose build: .` như hiện tại — không cần registry
-(Docker Hub/GHCR), không cần đăng nhập gì thêm ngoài SSH.
+Vì job `deploy` chạy trực tiếp trên server (không phải SSH từ xa vào), không cần khai báo secret
+SSH nào cả — chỉ cần cài runner 1 lần.
 
-## Chuẩn bị lần đầu trên server
+## Bước 1 — Cài Docker trên server (nếu chưa có)
 
 ```bash
-# 1) Cài Docker + Docker Compose plugin (nếu chưa có)
 curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER   # để chạy docker không cần sudo — cần logout/login lại
+```
 
-# 2) Clone repo về đúng 1 thư mục cố định — đây sẽ là DEPLOY_PATH
-git clone https://github.com/namminions96/WEBAPPHDR.git /opt/webapphdr
-cd /opt/webapphdr
+## Bước 2 — Cài GitHub Actions self-hosted runner trên server
 
-# 3) Tạo file .env chứa secret thật (KHÔNG commit lên git)
+Vào repo trên GitHub → **Settings → Actions → Runners → New self-hosted runner**, chọn Linux,
+làm theo đúng script GitHub hiển thị (đại khái):
+
+```bash
+mkdir actions-runner && cd actions-runner
+curl -o actions-runner-linux-x64.tar.gz -L https://github.com/actions/runner/releases/download/vX.X.X/actions-runner-linux-x64-X.X.X.tar.gz
+tar xzf actions-runner-linux-x64.tar.gz
+./config.sh --url https://github.com/namminions96/WEBAPPHDR --token <TOKEN_GITHUB_CẤP>
+
+# Cài làm service để tự chạy nền + tự khởi động lại cùng server:
+sudo ./svc.sh install
+sudo ./svc.sh start
+```
+
+> Dùng đúng token/URL mà GitHub hiển thị lúc bạn bấm "New self-hosted runner" — token có hạn
+> dùng ngắn, hết hạn thì vào lại trang đó lấy token mới.
+
+Sau khi cài xong, vào **Settings → Actions → Runners** sẽ thấy runner hiện trạng thái **Idle**
+(màu xanh) — vậy là sẵn sàng nhận job.
+
+## Bước 3 — Tạo `.env` (chỉ 1 lần, trực tiếp trên server)
+
+Chạy thử workflow lần đầu (push 1 commit bất kỳ, hoặc bấm **Run workflow** thủ công) — bước
+*"Kiểm tra .env đã có chưa"* sẽ báo lỗi và cho biết đường dẫn thư mục checkout (dạng
+`~/actions-runner/_work/WEBAPPHDR/WEBAPPHDR`). Vào đúng thư mục đó trên server:
+
+```bash
+cd ~/actions-runner/_work/WEBAPPHDR/WEBAPPHDR
 cp .env.example .env
 nano .env    # điền AUTOFOTELLO_SECRET = 1 chuỗi ngẫu nhiên dài, ví dụ: openssl rand -hex 32
-
-# 4) Chạy thử 1 lần bằng tay để chắc mọi thứ OK
-docker compose up -d --build
 ```
 
-> ⚠️ Từ lúc này, **không sửa code trực tiếp trên server nữa** — mỗi lần CI/CD chạy sẽ
-> `git reset --hard`, mọi thay đổi tay trong thư mục code (trừ `.env`, vì đã gitignore) sẽ bị
-> mất. Sửa gì thì sửa ở máy dev, push lên GitHub, để CI/CD tự đồng bộ xuống.
+`.env` nằm ngoài git (đã gitignore) và bước checkout dùng `clean: false` nên file này sẽ **không
+bị xóa** ở các lần deploy sau. Chạy lại workflow (push commit mới, hoặc **Re-run jobs**) — lần
+này sẽ build & chạy container thành công.
 
-## Tạo SSH key riêng cho GitHub Actions dùng
+## Từ giờ trở đi
 
-Không dùng key cá nhân của bạn — tạo 1 cặp key riêng chỉ để deploy:
+Chỉ cần `git push` lên `main` là server tự động:
+`checkout code mới → docker compose up -d --build → dọn image cũ`.
 
-```bash
-# Chạy trên máy dev (hoặc trên server đều được)
-ssh-keygen -t ed25519 -f deploy_key -N ""
+Theo dõi tiến trình ở tab **Actions** trên GitHub — vì job `deploy` chạy ngay trên server, log
+build/restart hiện trực tiếp ở đó, không cần SSH vào xem.
 
-# Copy public key vào server, thêm vào authorized_keys của user sẽ dùng để deploy
-ssh-copy-id -i deploy_key.pub <user>@<server-ip>
-# (hoặc dán tay nội dung deploy_key.pub vào ~/.ssh/authorized_keys trên server)
-```
-
-## Khai báo Secrets trên GitHub
-
-Vào repo trên GitHub → **Settings → Secrets and variables → Actions → New repository secret**,
-tạo 4 secret sau:
-
-| Secret | Giá trị |
-|---|---|
-| `SSH_HOST` | IP hoặc domain của server |
-| `SSH_USER` | user SSH dùng để deploy (vd `root`, `deploy`) |
-| `SSH_PORT` | cổng SSH (bỏ qua nếu là `22`) |
-| `SSH_PRIVATE_KEY` | toàn bộ nội dung file `deploy_key` (private key vừa tạo ở trên, **không phải** `.pub`) |
-| `DEPLOY_PATH` | đường dẫn thư mục đã clone trên server, vd `/opt/webapphdr` |
-
-Sau khi khai báo xong, chỉ cần `git push` lên nhánh `main` là workflow tự chạy. Xem tiến trình ở
-tab **Actions** trên GitHub.
-
-## Nếu server không mở SSH ra internet (đứng sau NAT/firewall)
-
-Cách trên cần GitHub (máy chủ đám mây của GitHub Actions) SSH được vào server của bạn. Nếu
-server không có IP public / không mở port SSH ra ngoài, dùng
-[self-hosted runner](https://docs.github.com/en/actions/hosting-your-own-runners) cài thẳng lên
-server thay vì SSH:
-
-- Cài runner theo hướng dẫn của GitHub (Settings → Actions → Runners → New self-hosted runner).
-- Đổi `runs-on: ubuntu-latest` của job `deploy` trong `deploy.yml` thành `runs-on: self-hosted`.
-- Thay bước `appleboy/ssh-action` bằng chạy thẳng lệnh `git reset --hard` + `docker compose up -d --build`
-  (vì lúc này job đã chạy ngay trên server, không cần SSH ra ngoài nữa).
+> ⚠️ Đừng sửa code trực tiếp trong thư mục `_work/WEBAPPHDR/WEBAPPHDR` trên server nữa — sửa ở
+> máy dev, push lên GitHub, để CI/CD tự đồng bộ xuống. Riêng `.env` thì sửa trực tiếp trên server
+> là đúng (vì không nằm trong git).
 
 ## Rollback nếu deploy lỗi
 
 ```bash
-ssh <user>@<server-ip>
-cd /opt/webapphdr
+cd ~/actions-runner/_work/WEBAPPHDR/WEBAPPHDR
 git log --oneline -5              # tìm commit cũ còn ổn định
 git reset --hard <commit-hash>
 docker compose up -d --build
+```
+
+## Gỡ runner (nếu cần)
+
+```bash
+cd ~/actions-runner
+sudo ./svc.sh stop
+sudo ./svc.sh uninstall
+./config.sh remove --token <TOKEN_GITHUB_CẤP>
 ```
