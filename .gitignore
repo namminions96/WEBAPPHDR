@@ -17,3 +17,6 @@ Thumbs.db
 
 # Runtime data (tạo ra khi chạy server, không commit)
 .flask_secret
+
+# Secrets thật trên server — chỉ commit .env.example
+.env

@@ -5,9 +5,9 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"                      # đổi thành "127.0.0.1:8000:8000" nếu có nginx phía trước
+    env_file:
+      - .env    # tạo từ .env.example, KHÔNG commit — giữ AUTOFOTELLO_SECRET thật ở đây
     environment:
-      # BẮT BUỘC đặt cố định để giữ đăng nhập qua các lần restart:
-      AUTOFOTELLO_SECRET: "doi-thanh-chuoi-ngau-nhien-dai-cua-ban"
       # Bật khi chạy sau nginx/HTTPS:
       AUTOFOTELLO_PROXY: "1"
       AUTOFOTELLO_HTTPS: "0"             # đặt "1" khi phục vụ qua https
