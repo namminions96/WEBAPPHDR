@@ -367,11 +367,11 @@ function app() {
       if (this._uploadId) return this._uploadId;
       if (!this.selectedFiles.length) throw new Error('Chưa chọn ảnh');
 
-      const MAX_BATCH_BYTES = 30 * 1024 * 1024;   // ~30MB / lô (nhỏ hơn nhiều so với 100MB Cloudflare)
-      const MAX_BATCH_FILES = 12;
+      const MAX_BATCH_BYTES = 15 * 1024 * 1024;   // ~15MB / lô (nhỏ để mỗi request xong nhanh, tránh timeout khi server bận)
+      const MAX_BATCH_FILES = 8;
       const CHUNK_THRESHOLD = 40 * 1024 * 1024;   // file lớn hơn -> tải theo mảnh (chunk)
       const CHUNK_SIZE = 20 * 1024 * 1024;        // 20MB / mảnh
-      const CONCURRENCY = 5;                      // số lô tải song song
+      const CONCURRENCY = 3;                      // số lô tải song song (giảm từ 5 -> 3: server/mạng không kham nổi 5 lô ~30MB cùng lúc, gây 502/524)
 
       const files = this.selectedFiles;
       const small = files.filter(f => (f.size || 0) <= CHUNK_THRESHOLD);
@@ -384,24 +384,37 @@ function app() {
         : (Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
       let done = 0;
 
-      const MAX_RETRIES = 3;      // số lần thử lại khi 1 lô/mảnh lỗi (mạng chập chờn, timeout...)
-      const RETRY_BASE_MS = 800;  // backoff: 0.8s, 1.6s, 3.2s...
+      const MAX_RETRIES = 3;      // số lần thử lại khi 1 lô/mảnh lỗi (mạng chập chờn, timeout, server quá tải...)
+      const RETRY_BASE_MS = 1500; // backoff: ~1.5s, 3s, 6s (x jitter) — đủ thời gian cho server hồi phục nếu đang quá tải
 
       say(`Bắt đầu tải lên ${total} ảnh…`);
       const bump = () => { if (sid) this.updateProgress(done, total, Math.round(done * 100 / total), sid); };
+
+      // "Cổng" chờ chung: khi 1 lô lỗi (thường là do server đang quá tải, không phải do riêng lô đó),
+      // MỌI lô khác (kể cả lô đang chờ tới lượt) cũng phải dừng lại 1 lúc trước khi bắn tiếp — tránh
+      // tình trạng cả cụm lô đồng loạt retry cùng lúc, dội thêm 1 lần quá tải nữa vào server đang hồi phục.
+      const gate = { blockedUntil: 0 };
+      const waitForGate = async () => {
+        const wait = gate.blockedUntil - Date.now();
+        if (wait > 0) await new Promise(res => setTimeout(res, wait));
+      };
 
       // Thử lại tự động cho 1 request tải lên: an toàn để retry vì upload_id
       // cố định từ đầu -> gửi lại chỉ ghi đè đúng file cũ, không trùng/lặp.
       const withRetry = async (label, fn) => {
         let lastErr;
         for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
+          await waitForGate();
           try {
             return await fn();
           } catch (e) {
             lastErr = e;
             if (attempt <= MAX_RETRIES) {
-              say(`⚠ ${label} lỗi (${e.message || e}) — thử lại lần ${attempt}/${MAX_RETRIES}…`);
-              await new Promise(res => setTimeout(res, RETRY_BASE_MS * (2 ** (attempt - 1))));
+              const jitter = 0.7 + Math.random() * 0.6; // 0.7x–1.3x, tránh các lô retry đúng cùng 1 thời điểm
+              const delay = Math.round(RETRY_BASE_MS * (2 ** (attempt - 1)) * jitter);
+              gate.blockedUntil = Math.max(gate.blockedUntil, Date.now() + delay);
+              say(`⚠ ${label} lỗi (${e.message || e}) — thử lại lần ${attempt}/${MAX_RETRIES} sau ${(delay / 1000).toFixed(1)}s…`);
+              await waitForGate();
             }
           }
         }
